@@ -65,24 +65,25 @@ type App struct {
 	instance Instance
 }
 
+// chains are what titles, pane labels and topics are resolved by. A nil panes
+// leaves every pane's label alone, and a nil distinct looks for no twins.
+type chains struct {
+	titles   resolver.TitleResolver
+	panes    resolver.PaneResolver
+	topics   *resolver.Topics
+	distinct *resolver.Deterministic
+}
+
 // newApp builds the application. The client belongs to Run rather than to the
-// App, so one App can be driven by any connection. A nil panes leaves every
-// pane's label alone.
-func newApp(
-	cfg Config,
-	log *slog.Logger,
-	titles resolver.TitleResolver,
-	panes resolver.PaneResolver,
-	topics *resolver.Topics,
-	instance Instance,
-) *App {
+// App, so one App can be driven by any connection.
+func newApp(cfg Config, log *slog.Logger, chains chains, instance Instance) *App {
 	return &App{
 		pollEvery:   cfg.Poll,
 		log:         log,
-		titles:      titles,
-		distinct:    distinctFor(cfg),
-		panes:       panes,
-		topics:      topics,
+		titles:      chains.titles,
+		distinct:    chains.distinct,
+		panes:       chains.panes,
+		topics:      chains.topics,
 		reported:    newTopicReports(),
 		preferAgent: cfg.PreferAgentPane,
 		sessionOnly: cfg.SessionOnly,
@@ -111,11 +112,15 @@ func newApp(
 // resolvers builds what the configuration asks titles to be resolved by: the
 // shipped chain, icons, the agent status and then its position in front when
 // asked, panes named unless that is turned off with icons and then their IDs in
-// front when asked, and topics reported unless that is turned off.
-func resolvers(
-	cfg Config,
-) (resolver.TitleResolver, resolver.PaneResolver, *resolver.Topics) {
+// front when asked, topics reported unless that is turned off, and twins looked
+// for when asked.
+func resolvers(cfg Config) chains {
 	chain := chainFor(cfg)
+
+	built := chains{topics: topicsFor(cfg)}
+	if cfg.DistinctTitles {
+		built.distinct = chain
+	}
 
 	var titles resolver.TitleResolver = chain
 	if cfg.ShowIcons {
@@ -130,10 +135,10 @@ func resolvers(
 		titles = resolver.NewNumbered(titles, cfg.MaxLength)
 	}
 
-	topics := topicsFor(cfg)
+	built.titles = titles
 
 	if !cfg.RenamePanes {
-		return titles, nil, topics
+		return built
 	}
 
 	var panes resolver.PaneResolver = chain
@@ -145,7 +150,9 @@ func resolvers(
 		panes = resolver.NewPaneIDs(panes, cfg.MaxLength)
 	}
 
-	return titles, panes, topics
+	built.panes = panes
+
+	return built
 }
 
 // chainFor is the chain titles are resolved by before anything is put in front.
@@ -166,16 +173,6 @@ func chainFor(cfg Config) *resolver.Deterministic {
 		ShowHandle:    cfg.ShowAgentHandle,
 		Home:          cfg.Home,
 	})
-}
-
-// distinctFor is what finds tabs that would read the same, or nil when the user
-// left that off.
-func distinctFor(cfg Config) *resolver.Deterministic {
-	if !cfg.DistinctTitles {
-		return nil
-	}
-
-	return chainFor(cfg)
 }
 
 // topicsFor is what a workspace's topic is read by, or nil when the user turned
