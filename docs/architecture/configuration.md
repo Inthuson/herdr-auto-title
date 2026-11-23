@@ -190,8 +190,8 @@ builds the resolver chains — `MAX_LENGTH`, `BRANCH_MAX` and `DIRECTORY_MAX` ar
 baked into `resolver.Default`, `WORKSPACE_MAX_LENGTH` into the topic's bound,
 `ICONS` decides whether both chains are wrapped, `DISTINCT` whether twins are
 looked for, and `AGENT_STATUS`, `POSITION` and `PANE_ID` whether the tab and
-the pane chain are — so
-rereading the file mid-run would apply some settings and quietly ignore others.
+the pane chain are. Rereading the file mid-run would apply some settings and
+quietly ignore others.
 An honest restart is better than a reload that works half the time, and the
 plugin restarts in about a second without the server: the `restart` action,
 described in [the poll loop](./poll-loop.md#a-successor-on-the-claim).
