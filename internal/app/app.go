@@ -39,6 +39,9 @@ type App struct {
 	pollEvery time.Duration
 	log       *slog.Logger
 	titles    resolver.TitleResolver
+	// distinct is the undecorated chain that finds tabs whose titles would
+	// read the same, and is nil unless the user turned that on.
+	distinct *resolver.Deterministic
 	// panes names each pane of a tab as well as the tab itself, and is nil
 	// when the user turned that off.
 	panes resolver.PaneResolver
@@ -77,6 +80,7 @@ func newApp(
 		pollEvery:   cfg.Poll,
 		log:         log,
 		titles:      titles,
+		distinct:    distinctFor(cfg),
 		panes:       panes,
 		topics:      topics,
 		reported:    newTopicReports(),
@@ -111,22 +115,7 @@ func newApp(
 func resolvers(
 	cfg Config,
 ) (resolver.TitleResolver, resolver.PaneResolver, *resolver.Topics) {
-	chain := resolver.Default(resolver.Options{
-		MaxLength:     cfg.MaxLength,
-		BranchMax:     cfg.BranchMax,
-		DirectoryMax:  cfg.DirectoryMax,
-		HideDirectory: cfg.HideDirectory,
-		HideAgentName: !cfg.ShowAgentName,
-		ShowHandle:    cfg.ShowAgentHandle,
-		Home:          cfg.Home,
-	})
-
-	if cfg.SessionOnly {
-		chain = resolver.New(
-			resolver.Options{MaxLength: cfg.MaxLength, HideAgentName: true, Home: cfg.Home},
-			resolver.NewTranscript(),
-		)
-	}
+	chain := chainFor(cfg)
 
 	var titles resolver.TitleResolver = chain
 	if cfg.ShowIcons {
@@ -157,6 +146,36 @@ func resolvers(
 	}
 
 	return titles, panes, topics
+}
+
+// chainFor is the chain titles are resolved by before anything is put in front.
+func chainFor(cfg Config) *resolver.Deterministic {
+	if cfg.SessionOnly {
+		return resolver.New(
+			resolver.Options{MaxLength: cfg.MaxLength, HideAgentName: true, Home: cfg.Home},
+			resolver.NewTranscript(),
+		)
+	}
+
+	return resolver.Default(resolver.Options{
+		MaxLength:     cfg.MaxLength,
+		BranchMax:     cfg.BranchMax,
+		DirectoryMax:  cfg.DirectoryMax,
+		HideDirectory: cfg.HideDirectory,
+		HideAgentName: !cfg.ShowAgentName,
+		ShowHandle:    cfg.ShowAgentHandle,
+		Home:          cfg.Home,
+	})
+}
+
+// distinctFor is what finds tabs that would read the same, or nil when the user
+// left that off.
+func distinctFor(cfg Config) *resolver.Deterministic {
+	if !cfg.DistinctTitles {
+		return nil
+	}
+
+	return chainFor(cfg)
 }
 
 // topicsFor is what a workspace's topic is read by, or nil when the user turned
@@ -277,6 +296,10 @@ func (a *App) readAndRename(ctx context.Context, client herdr.Client) error {
 	tabs := a.tabsIn(snapshot)
 	poll := a.reads.Poll(client, snapshot.Panes, drew)
 	renamer, renamesPanes := client.(herdr.PaneRenamer)
+
+	if a.distinct != nil {
+		a.qualify(ctx, pass, poll, tabs)
+	}
 
 	for _, tab := range tabs {
 		if ctx.Err() != nil {
@@ -425,6 +448,32 @@ func (a *App) readAll(ctx context.Context, poll *reads.Poll, tab state.TabState)
 	}
 
 	return read
+}
+
+// qualify marks the tabs whose titles would read the same as another's. It
+// compares only the tabs a poll may name, read in full as nameTab reads them.
+func (a *App) qualify(
+	ctx context.Context,
+	pass *labels.Pass,
+	poll *reads.Poll,
+	tabs []state.TabState,
+) {
+	nameable := make([]state.TabState, 0, len(tabs))
+
+	for _, tab := range tabs {
+		if tab.Context == nil || pass.TabLocked(tab.ID) || !a.readAll(ctx, poll, tab) ||
+			a.labels.Owned(tab) {
+			continue
+		}
+
+		poll.Fill(ctx, tab.Context)
+		nameable = append(nameable, tab)
+	}
+
+	qualifiers := a.distinct.Qualifiers(nameable)
+	for i := range tabs {
+		tabs[i].Qualifier = qualifiers[tabs[i].ID]
+	}
 }
 
 // nameTab keeps one tab's label in step with what the tab is doing.

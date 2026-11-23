@@ -990,6 +990,40 @@ The glyphs need Nerd Fonts 3.0 or later: the agent's robot is an Octicon that
 2.3 lacks. On Windows only two icons ever show, the agent's and the shell's,
 because `pane.process_info` there lists nothing that runs under the shell.
 
+## Twin titles can be told apart
+
+Every tab is named on its own, so two tabs whose agents chose the same title
+read the same, and the rule above that drops a workspace's directory makes that
+likelier: two Claude Code sessions titled `Fix OAuth redirect`, one in a
+workspace `dashboard` and one in `api`, both read `1 · Fix OAuth redirect`.
+The workspace row tells them apart only where it is on screen beside them.
+
+`HERDR_AUTO_TITLE_DISTINCT=true` compares the tabs a poll can name, across the
+whole session, by the title the chain gives each before any decorator, so the
+position does not hide a twin. Each group of tabs that read the same gets a
+qualifier (`Deterministic.Qualifiers`), the first of these that is different
+for every tab in the group:
+
+1. **The context**, as the chain found it, before the workspace row, a hidden
+   directory or `DIRECTORY_MAX` took it away: `dashboard › Fix OAuth redirect`
+   beside `api › Fix OAuth redirect`.
+2. **The start of the agent's session id**, the first group of its UUID:
+   `3fa9c1d2 › Fix OAuth redirect`. It takes the context's place rather than
+   adding to it, since the context is what the twins share.
+
+A tab with no value of its own, a pane in the home directory beside one in a
+project, keeps its title: once its twin says where it is, the two already
+differ. A group nothing tells apart, two shells in one directory, is left as it
+is, because a made-up difference would be worse than none. The branch is not on
+the ladder: twins on different branches already read differently, unless
+`BRANCH_MAX` cut both to the same words, and a dropped trunk is the same trunk.
+
+The qualifier is decided again at every poll, from that poll's tabs alone, so a
+tab whose twin closes reads as it would have without one. That is the cost, and
+why it is off by default: a twin coming or going renames the other tab. Only
+tabs are compared; a pane is named against its own tab already, and the
+workspace topic is not a label anyone switches by.
+
 ## The agent status is not a part of the title either
 
 `HERDR_AUTO_TITLE_AGENT_STATUS=true` puts a mark for what a tab's agents are
