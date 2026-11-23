@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kryptamine/herdr-auto-title/internal/herdr"
+	"github.com/kryptamine/herdr-auto-title/internal/herdr/herdrtest"
 	"github.com/kryptamine/herdr-auto-title/internal/state"
 )
 
@@ -179,5 +180,84 @@ func TestAQualifiedTabIsNamedTheSameEveryTime(t *testing.T) {
 		if again := defaultChain().Qualifiers(tabs); !maps.Equal(again, first) {
 			t.Fatalf("qualifiers = %v, then %v", first, again)
 		}
+	}
+}
+
+func TestAQualifierMakesNoNewTwin(t *testing.T) {
+	t.Parallel()
+
+	// C already says dashboard, so giving A its directory back would only
+	// move the twin from B to C.
+	tabs := []state.TabState{
+		twin("w1:t1", "dashboard", dashboard),
+		twin("w2:t1", "api", api),
+		twin("w3:t1", "other", dashboard),
+	}
+
+	got := qualified(defaultChain(), tabs...)
+	if got[0] == got[2] {
+		t.Errorf("names = %q, want A and C apart", got)
+	}
+
+	got = qualified(defaultChain(),
+		session(tabs[0], "3fa9c1d2-0000-4000-8000-000000000001"),
+		session(tabs[1], "7b20e4aa-0000-4000-8000-000000000002"),
+		tabs[2],
+	)
+
+	want := []string{
+		"3fa9c1d2 › Fix OAuth redirect",
+		"7b20e4aa › Fix OAuth redirect",
+		"dashboard › Fix OAuth redirect",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("names = %q, want %q", got, want)
+	}
+}
+
+func TestTheDirectoryOutranksTheSession(t *testing.T) {
+	t.Parallel()
+
+	// Both would tell the twins apart; the directory is the one a reader knows.
+	got := qualified(defaultChain(),
+		session(twin("w1:t1", "dashboard", dashboard), "3fa9c1d2-0000-4000-8000-000000000001"),
+		session(twin("w2:t1", "api", api), "7b20e4aa-0000-4000-8000-000000000002"),
+	)
+
+	want := []string{"dashboard › Fix OAuth redirect", "api › Fix OAuth redirect"}
+	if !slices.Equal(got, want) {
+		t.Errorf("names = %q, want %q", got, want)
+	}
+}
+
+func TestAQualifierKeepsToTheDirectoryBound(t *testing.T) {
+	t.Parallel()
+
+	// The bound is what leaves the activity its width.
+	got := qualified(directoryChain(4, false),
+		twin("w1:t1", "dashboard", dashboard),
+		twin("w2:t1", "api", api),
+	)
+
+	want := []string{"dash › Fix OAuth redirect", "api › Fix OAuth redirect"}
+	if !slices.Equal(got, want) {
+		t.Errorf("names = %q, want %q", got, want)
+	}
+}
+
+func TestABoundThatJoinsTwinsGivesWayToTheWholeDirectory(t *testing.T) {
+	t.Parallel()
+
+	web := herdrtest.Dir("work", "dashboard-web")
+	admin := herdrtest.Dir("work", "dashboard-admin")
+
+	got := qualified(directoryChain(9, false),
+		twin("w1:t1", "dashboard-web", web),
+		twin("w2:t1", "dashboard-admin", admin),
+	)
+
+	want := []string{"dashboard-web › Fix OAuth redirect", "dashboard-admin › Fix OAuth redirect"}
+	if !slices.Equal(got, want) {
+		t.Errorf("names = %q, want %q", got, want)
 	}
 }
